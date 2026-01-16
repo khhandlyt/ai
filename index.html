@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 绘图提示词润色与生成</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+        }
+        
+        .text-shadow {
+            text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .card-hover {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);
+        }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-10 max-w-5xl">
+        <!-- Header -->
+        <header class="text-center mb-16">
+            <h1 class="text-4xl font-bold text-gray-800 mb-4 text-shadow">AI 绘图提示词润色与生成工具</h1>
+            <p class="text-xl text-gray-600 max-w-2xl mx-auto">
+                输入您的绘图想法，我们将为您润色为专业的AI绘图提示词，并生成精美的图像
+            </p>
+        </header>
+        
+        <main>
+            <!-- Form Section -->
+            <section class="bg-white rounded-xl shadow-md p-8 mb-10 card-hover">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-6">输入原始提示词</h2>
+                <form id="promptForm" class="space-y-6">
+                    <div>
+                        <label for="originalPrompt" class="block text-lg font-medium text-gray-700 mb-2">
+                            请描述您想要生成的图像
+                        </label>
+                        <textarea 
+                            id="originalPrompt" 
+                            rows="5" 
+                            class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-3 focus:ring-blue-500 focus:border-transparent transition-all"
+                            placeholder="例如：一只可爱的猫咪在草地上玩耍"
+                        ></textarea>
+                    </div>
+                    <button 
+                        type="submit" 
+                        class="w-full bg-blue-600 text-white font-medium py-3 px-6 rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                    >
+                        🎨 生成图像
+                    </button>
+                </form>
+            </section>
+            
+            <!-- Refined Prompt Section -->
+            <section id="refinedSection" class="bg-white rounded-xl shadow-md p-8 mb-10 card-hover hidden">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">润色后的专业提示词</h2>
+                <div 
+                    id="refinedPrompt" 
+                    class="bg-gray-50 p-5 rounded-lg text-gray-700 border border-gray-100 whitespace-pre-wrap"
+                ></div>
+            </section>
+            
+            <!-- Image Result Section -->
+            <section id="imageSection" class="bg-white rounded-xl shadow-md p-8 mb-10 card-hover hidden">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">生成的图像</h2>
+                <div id="imageContainer" class="flex flex-col items-center">
+                    <!-- Image will be inserted here -->
+                    <div class="mt-6 text-gray-500 text-sm" id="imageInfo">
+                        点击图像可查看原始尺寸
+                    </div>
+                </div>
+            </section>
+            
+            <!-- Loading Indicators -->
+            <div id="loading" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+                <div class="bg-white p-8 rounded-xl shadow-xl max-w-sm w-full">
+                    <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500 mx-auto"></div>
+                    <p class="mt-6 text-center text-gray-700 text-lg font-medium" id="loadingText">
+                        处理中，请稍候...
+                    </p>
+                </div>
+            </div>
+            
+            <!-- Error Message -->
+            <div id="error" class="bg-red-50 border border-red-200 text-red-700 px-6 py-4 rounded-lg mb-10 hidden" role="alert">
+                <div class="flex items-start">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 flex-shrink-0 text-red-600 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.34 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                    </svg>
+                    <div class="ml-3">
+                        <p class="font-medium">错误</p>
+                        <p class="mt-1 text-red-600" id="errorMessage">发生错误，请重试。</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+        
+        <footer class="text-center text-gray-600 mt-16 pb-8">
+            <p class="text-lg">© 2026 AI 绘图工具</p>
+            <p class="mt-2 text-sm">基于 Volcengine ARK API 构建</p>
+        </footer>
+    </div>
+    
+    <script>
+        // API Configuration
+        const API_KEY = "0fd0feed-e56d-4665-93c7-ed682c9c23f1";
+        const BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+        
+        // DOM Elements
+        const form = document.getElementById('promptForm');
+        const originalPrompt = document.getElementById('originalPrompt');
+        const refinedSection = document.getElementById('refinedSection');
+        const refinedPrompt = document.getElementById('refinedPrompt');
+        const imageSection = document.getElementById('imageSection');
+        const imageContainer = document.getElementById('imageContainer');
+        const loading = document.getElementById('loading');
+        const loadingText = document.getElementById('loadingText');
+        const error = document.getElementById('error');
+        const errorMessage = document.getElementById('errorMessage');
+        
+        // Show loading with message
+        function showLoading(message = '处理中，请稍候...') {
+            loadingText.textContent = message;
+            loading.classList.remove('hidden');
+        }
+        
+        // Hide loading
+        function hideLoading() {
+            loading.classList.add('hidden');
+        }
+        
+        // Show error
+        function showError(msg) {
+            errorMessage.textContent = msg;
+            error.classList.remove('hidden');
+        }
+        
+        // Hide error
+        function hideError() {
+            error.classList.add('hidden');
+        }
+        
+        // Form submit handler
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            hideError();
+            
+            const userInput = originalPrompt.value.trim();
+            if (!userInput) {
+                showError('请输入原始提示词');
+                return;
+            }
+            
+            try {
+                // Step 1: Refine the prompt
+                showLoading('正在润色提示词...');
+                
+                // Construct the refinement prompt
+                const refinementPrompt = `请将以下文本润色为适合AI生成图片的专业提示词：
+${userInput}
+
+润色要求：
+1. 补充画面细节（构图、光线、色彩、材质、分辨率）
+2. 加入AI绘图常用风格术语（如写实主义、二次元、赛博朋克、油画质感）
+3. 保持原意不变，语言精准且符合AI绘图提示词的表达习惯
+4. 直接输出润色后的提示词，无需额外解释`;
+                
+                const refineResponse = await fetch(`${BASE_URL}/responses`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek-v3-2-251201",
+                        input: [{"role": "user", "content": refinementPrompt}]
+                    })
+                });
+                
+                if (!refineResponse.ok) {
+                    throw new Error(`润色提示词失败：${refineResponse.statusText}`);
+                }
+                
+                const refineData = await refineResponse.json();
+                const refinedText = refineData.output[0].content[0].text;
+                refinedPrompt.textContent = refinedText;
+                refinedSection.classList.remove('hidden');
+                
+                // Step 2: Generate image
+                showLoading('正在生成图像...');
+                
+                const imageResponse = await fetch(`${BASE_URL}/images/generations`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "doubao-seedream-4-5-251128",
+                        prompt: refinedText,
+                        size: "2K",
+                        response_format: "url",
+                        watermark: true
+                    })
+                });
+                
+                if (!imageResponse.ok) {
+                    throw new Error(`生成图像失败：${imageResponse.statusText}`);
+                }
+                
+                const imageData = await imageResponse.json();
+                const imageUrl = imageData.data[0].url;
+                
+                // Display image
+                imageContainer.innerHTML = `
+                    <a href="${imageUrl}" target="_blank" rel="noopener noreferrer">
+                        <img 
+                            src="${imageUrl}" 
+                            alt="生成的图像" 
+                            class="max-w-full h-auto rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                        >
+                    </a>
+                `;
+                imageSection.classList.remove('hidden');
+                
+                // Scroll to results
+                refinedSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                hideLoading();
+            }
+        });
+    </script>
+</body>
+</html>
