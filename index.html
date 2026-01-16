@@ -80,6 +80,22 @@
                         点击图像可查看原始尺寸
                     </div>
                 </div>
+                <div class="mt-8">
+                    <button 
+                        id="generateVideoBtn" 
+                        class="w-full bg-purple-600 text-white font-medium py-3 px-6 rounded-lg hover:bg-purple-700 transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2"
+                    >
+                        🎬 基于此图像生成视频
+                    </button>
+                </div>
+            </section>
+            
+            <!-- Video Result Section -->
+            <section id="videoSection" class="bg-white rounded-xl shadow-md p-8 mb-10 card-hover hidden">
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">生成的视频</h2>
+                <div id="videoContainer" class="flex flex-col items-center">
+                    <!-- Video will be inserted here -->
+                </div>
             </section>
             
             <!-- Loading Indicators -->
@@ -124,10 +140,16 @@
         const refinedPrompt = document.getElementById('refinedPrompt');
         const imageSection = document.getElementById('imageSection');
         const imageContainer = document.getElementById('imageContainer');
+        const generateVideoBtn = document.getElementById('generateVideoBtn');
+        const videoSection = document.getElementById('videoSection');
+        const videoContainer = document.getElementById('videoContainer');
         const loading = document.getElementById('loading');
         const loadingText = document.getElementById('loadingText');
         const error = document.getElementById('error');
         const errorMessage = document.getElementById('errorMessage');
+        
+        // Store generated image URL
+        let generatedImageUrl = '';
         
         // Show loading with message
         function showLoading(message = '处理中，请稍候...') {
@@ -222,6 +244,9 @@ ${userInput}
                 const imageData = await imageResponse.json();
                 const imageUrl = imageData.data[0].url;
                 
+                // Store generated image URL
+                generatedImageUrl = imageUrl;
+                
                 // Display image
                 imageContainer.innerHTML = `
                     <a href="${imageUrl}" target="_blank" rel="noopener noreferrer">
@@ -243,6 +268,140 @@ ${userInput}
                 hideLoading();
             }
         });
+        
+        // Generate video from image
+        generateVideoBtn.addEventListener('click', async () => {
+            if (!generatedImageUrl) {
+                showError('请先生成图像，然后再生成视频');
+                return;
+            }
+            
+            try {
+                showLoading('正在创建视频生成任务...');
+                
+                // Create video generation task
+                const videoResponse = await fetch(`${BASE_URL}/contents/generations/tasks`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${API_KEY}`
+                    },
+                    body: JSON.stringify({
+                        model: "doubao-seedance-1-0-pro-fast-251015",
+                        content: [
+                            {
+                                "type": "text",
+                                "text": `基于提供的图像生成视频，保持风格一致，展示动态效果  --resolution 1080p  --duration 5 --camerafixed false --watermark true`
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": generatedImageUrl
+                                }
+                            }
+                        ]
+                    })
+                });
+                
+                if (!videoResponse.ok) {
+                    const errorData = await videoResponse.json();
+                    throw new Error(`创建视频生成任务失败：${errorData.error?.message || videoResponse.statusText}`);
+                }
+                
+                const videoData = await videoResponse.json();
+                const taskId = videoData.id;
+                
+                // Start polling for task status
+                await pollVideoTaskStatus(taskId);
+                
+            } catch (err) {
+                showError(err.message);
+            } finally {
+                hideLoading();
+            }
+        });
+        
+        // Poll video task status
+        async function pollVideoTaskStatus(taskId) {
+            let attempts = 0;
+            const maxAttempts = 50; // 3 seconds * 50 = 150 seconds = 2.5 minutes
+            
+            while (attempts < maxAttempts) {
+                showLoading(`视频生成中，当前进度：${Math.min(Math.round((attempts/maxAttempts)*100), 95)}%...`);
+                
+                try {
+                    const statusResponse = await fetch(`${BASE_URL}/contents/generations/tasks/${taskId}`, {
+                        method: 'GET',
+                        headers: {
+                            'Authorization': `Bearer ${API_KEY}`
+                        }
+                    });
+                    
+                    if (!statusResponse.ok) {
+                        throw new Error(`查询任务状态失败：${statusResponse.statusText}`);
+                    }
+                    
+                    const statusData = await statusResponse.json();
+                    const status = statusData.status;
+                    
+                    if (status === "succeeded") {
+                        showLoading('视频生成成功，正在处理结果...');
+                        
+                        // Display video
+                        const videoUrl = statusData.content.video_url;
+                        videoContainer.innerHTML = `
+                            <div class="w-full max-w-2xl">
+                                <!-- Video Preview -->
+                                <div class="bg-gray-900 rounded-lg overflow-hidden mb-6">
+                                    <video 
+                                        src="${videoUrl}" 
+                                        controls 
+                                        class="w-full"
+                                        poster="${generatedImageUrl}"
+                                    >
+                                        您的浏览器不支持视频播放。
+                                    </video>
+                                </div>
+                                
+                                <!-- Video Info and Actions -->
+                                <div class="flex flex-col sm:flex-row justify-between items-center gap-4">
+                                    <div>
+                                        <p class="text-lg font-medium text-gray-800 mb-1">生成的视频</p>
+                                        <p class="text-sm text-gray-600">视频分辨率：1080p | 时长：5秒</p>
+                                    </div>
+                                    <a 
+                                        href="${videoUrl}" 
+                                        download="generated_video.mp4" 
+                                        class="bg-blue-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-blue-700 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                                    >
+                                        💾 下载视频
+                                    </a>
+                                </div>
+                            </div>
+                        `;
+                        videoSection.classList.remove('hidden');
+                        
+                        // Scroll to video section
+                        videoSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        
+                        return;
+                    } else if (status === "failed") {
+                        throw new Error(`视频生成失败：${statusData.error?.message || '未知错误'}`);
+                    } else if (status === "cancelled" || status === "expired") {
+                        throw new Error(`视频生成任务已${status === "cancelled" ? '取消' : '过期'}`);
+                    }
+                    
+                    // Wait for 3 seconds before next poll
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    attempts++;
+                    
+                } catch (err) {
+                    throw err;
+                }
+            }
+            
+            throw new Error('视频生成任务超时，请稍后重试');
+        }
     </script>
 </body>
 </html>
